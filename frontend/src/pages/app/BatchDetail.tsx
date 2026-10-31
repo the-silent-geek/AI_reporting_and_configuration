@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { AlertTriangle, ArrowLeft, Check, CheckCheck, Copy, FileSearch, Radio } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, BadgeCheck, Check, CheckCheck, Copy, FileSearch, GitCompare, Radio } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -84,7 +84,17 @@ export function BatchDetail() {
           </div>
           <h1 className="mt-2 truncate text-xl font-semibold tracking-tight sm:text-2xl">{batch.file_name}</h1>
         </div>
-        {canCommit && <Button variant="primary" icon={CheckCheck} onClick={() => setConfirm(true)}>Commit batch</Button>}
+        <div className="flex shrink-0 gap-2">
+          {can('mapping.review') && ['MAPPING_REVIEW', 'NEEDS_REVIEW'].includes(batch.status) && (
+            <Link to={`${app.route}/mapping/${batch.batch_id}`}>
+              <Button variant={batch.status === 'MAPPING_REVIEW' ? 'primary' : 'secondary'} icon={GitCompare}>Review mapping</Button>
+            </Link>
+          )}
+          {can('data_quality.review') && batch.status === 'NEEDS_REVIEW' && (
+            <Link to={`${app.route}/data-quality/${batch.batch_id}`}><Button variant="primary" icon={BadgeCheck}>Resolve issues</Button></Link>
+          )}
+          {canCommit && <Button variant="primary" icon={CheckCheck} onClick={() => setConfirm(true)}>Commit batch</Button>}
+        </div>
       </div>
 
       <Card className="p-5 sm:p-6">

@@ -1,0 +1,5 @@
+# Models, kept apart because they are large (PyTorch, Paddle) and the tests don't need them.
+# Production: pip install -r requirements.txt -r requirements-ml.txt
+sentence-transformers==5.1.0   # BAAI/bge-small-en-v1.5, CPU
+paddlepaddle==3.1.1
+paddleocr==3.2.0              # brings numpy

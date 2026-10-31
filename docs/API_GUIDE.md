@@ -88,6 +88,7 @@ sequenceDiagram
 | GET | `/api/apps/{app}/batches/{id}` | – | batch + live `counts` |
 | GET | `/api/apps/{app}/batches/{id}/events` | header `Last-Event-ID?` | **SSE** stream (below) |
 | POST | `/api/apps/{app}/batches/{id}/commit` | – | `{status, received, accepted, rejected, loaded}` · 403 maker-checker |
+| POST | `/api/apps/{app}/assistant/chat` | `{message, conversation_id?}` | Smart Assistance reply (below) · 403 no `assistant.use` · 404 not your conversation · 503 no `GROQ_API_KEY` |
 | GET | `/api/health` | – | `{status, broker}` |
 | POST | `/api/dev/progress` | worker progress JSON | **DEV only** (`DEV_ENDPOINTS=true`): fake the worker |
 
@@ -106,7 +107,26 @@ data: {"event_id":42,"batch_id":"…","app":"erp","status":"EXTRACTING","progres
 
 ---
 
+## 💬 Smart Assistance
+
+`POST /api/apps/{app}/assistant/chat` with `{"message": "...", "conversation_id": "<from the last reply, optional>"}`.
+
+```json
+{"conversation_id": "uuid", "status": "answered|clarification|refused|error",
+ "answer": "text for the user", "tool_name": "get_erp_payables_ageing", "grounded": true,
+ "sources": {"result_reference": "uuid", "reporting_period": "As of 2026-10-31", "filters": {}, "metric_definitions": []},
+ "result": {"kpis": {}, "chart_data": [], "supporting_rows": [], "...": "full tool result"}}
+```
+
+- **`clarification`:** send the user's reply with the same `conversation_id`. The original question is remembered.
+- **`grounded: false`:** the AI summary contained a number that isn't in the tool result, so the server replaced it with a plain summary of the KPIs.
+- **How it works:** `backend/app/assistant/` (LangGraph) plans with Groq, validates the plan, runs one tool from `db/07_smart_assistance.sql` as `<app>_app`, then answers only from that result. Every question is audited in `<app>.assistant_audit`.
+
+---
+
 ## 🤖 AI worker contract (for the ML side)
+
+Implemented in [`worker/`](../worker/README.md) (`python -m ai_worker`).
 
 ```mermaid
 flowchart LR

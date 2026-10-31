@@ -362,6 +362,190 @@ BEGIN
     RAISE NOTICE 'PASS aml/lending pipelines';
 END $$;
 
+-- ------------------------------------------- Smart Assistance tools --------
+-- Known data, so every KPI can be checked by hand.
+DO $$
+DECLARE
+    mgr uuid := pg_temp.uid('manager@studio.local');
+    associate uuid := pg_temp.uid('associate@studio.local');
+    b uuid := gen_random_uuid();
+    lb uuid := gen_random_uuid();
+    ab uuid := gen_random_uuid();
+    r jsonb;
+    conv uuid;
+BEGIN
+    INSERT INTO erp.ingestion_batch (batch_id, file_name, file_type, file_size_bytes, sha256, storage_uri, uploaded_by)
+    VALUES (b, 'a.csv', 'CSV', 1, encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'file:///a', associate);
+    INSERT INTO erp.supplier VALUES ('TS1', 'ACME Ltd', b, 1), ('TS2', 'Globex', b, 2);
+    INSERT INTO erp.invoice VALUES
+        ('TI1', 'TS1', '2026-08-01', '2026-09-01', 1000, 'USD', b, 3),   -- 400 paid -> 600 open, 60 days late
+        ('TI2', 'TS1', '2026-10-01', '2026-11-15',  500, 'USD', b, 4),   -- not yet due
+        ('TI3', 'TS2', '2026-06-01', '2026-07-01', 2000, 'EUR', b, 5),   -- 300 approved credit -> 1700, 122 days
+        ('TI4', 'TS2', '2026-11-05', '2026-12-05',  999, 'EUR', b, 6);   -- issued after the as-of date
+    INSERT INTO erp.payment VALUES ('TP1', 'TS1', '2026-09-10', 400, 'USD', 'wire', b, 7);
+    INSERT INTO erp.payment_allocation VALUES ('TP1', 'TI1', 400, '2026-09-10', b, 8);
+    INSERT INTO erp.credit_note VALUES ('TC1', 'TI3', 300, '2026-07-15', true, b, 9),
+                                       ('TC2', 'TI3', 100, '2026-07-20', false, b, 10);   -- unapproved: ignored
+
+    r := erp.fn_tool_payables_ageing(mgr, '2026-10-31');
+    ASSERT r->'kpis'->'outstanding_amount_by_currency' = '{"USD": 1100.00, "EUR": 1700.00}', 'outstanding: ' || (r->'kpis')::text;
+    ASSERT r->'kpis'->'overdue_amount_by_currency' = '{"USD": 600.00, "EUR": 1700.00}', 'overdue';
+    ASSERT (r->'kpis'->>'overdue_invoice_count')::int = 2, 'two overdue invoices';
+    ASSERT r->>'reporting_period' = 'As of 2026-10-31' AND r->>'product' = 'erp', 'result contract';
+    ASSERT EXISTS (SELECT 1 FROM erp.assistant_tool_run WHERE run_id = (r->>'result_reference')::uuid
+                   AND tool_name = 'get_erp_payables_ageing' AND user_id = mgr), 'tool run recorded';
+    ASSERT (SELECT array_agg(x->>'bucket' ORDER BY ord) FROM jsonb_array_elements(r->'chart_data') WITH ORDINALITY t(x, ord))
+           = ARRAY['current', '31-60', '90+'], 'ageing buckets';
+
+    r := erp.fn_tool_overdue_by_supplier(mgr, '2026-10-31', 1);
+    ASSERT jsonb_array_length(r->'chart_data') = 1 AND r->'chart_data'->0->>'supplier_id' = 'TS2', 'top supplier by amount';
+    ASSERT (r->'kpis'->>'overdue_supplier_count')::int = 2, 'kpis ignore the limit';
+
+    r := erp.fn_tool_payment_details(mgr, 'TP1');
+    ASSERT (r->'kpis'->>'found')::boolean AND (r->'kpis'->>'unallocated_amount')::numeric = 0, 'payment fully allocated';
+    ASSERT NOT (erp.fn_tool_payment_details(mgr, 'NOPE')->'kpis'->>'found')::boolean, 'unknown payment: found=false';
+
+    -- Lending
+    INSERT INTO lending.ingestion_batch (batch_id, file_name, file_type, file_size_bytes, sha256, storage_uri, uploaded_by)
+    VALUES (lb, 'l.csv', 'CSV', 1, encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'file:///l', mgr);
+    INSERT INTO lending.application VALUES
+        ('TA1', 'C1', '2026-10-03', 'REJECTED', 1000, 'INR', 'PL', NULL, 12, lb, 1),
+        ('TA2', 'C2', '2026-10-20', 'APPROVED', 5000, 'INR', 'PL', NULL, 24, lb, 2),
+        ('TA3', 'C3', '2026-09-30', 'REJECTED', 7000, 'INR', 'PL', NULL, 12, lb, 3);   -- outside October
+    r := lending.fn_tool_application_summary(mgr, '2026-10-01', '2026-10-31', 'rejected');
+    ASSERT (r->'kpis'->>'application_count')::int = 1 AND r->'kpis'->'requested_amount_by_currency' = '{"INR": 1000.00}',
+           'rejected in October: ' || (r->'kpis')::text;
+    ASSERT r->'filters'->>'status' = 'REJECTED', 'filters echoed, normalized';
+    ASSERT NOT (r->'supporting_rows'->0 ? 'applicant_ref'), 'no applicant refs in summaries';
+    r := lending.fn_tool_application_trend(mgr, '2026-09-01', '2026-10-31', 'month');
+    ASSERT jsonb_array_length(r->'chart_data') = 2, 'two monthly buckets';
+    BEGIN
+        PERFORM lending.fn_tool_application_summary(mgr, '2026-10-31', '2026-10-01');
+        RAISE EXCEPTION 'reversed period accepted';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+    BEGIN   -- associate has no Lending role
+        PERFORM lending.fn_tool_application_summary(associate, '2026-10-01', '2026-10-31');
+        RAISE EXCEPTION 'associate used lending tool';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- AML
+    INSERT INTO aml.ingestion_batch (batch_id, file_name, file_type, file_size_bytes, sha256, storage_uri, uploaded_by)
+    VALUES (ab, 'a.json', 'JSON', 1, encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'file:///a', mgr);
+    INSERT INTO aml.investigation_case VALUES ('TK1', 'OPEN', 'HIGH', 'P1', 'inv', '2026-10-02', NULL, ab, 1);
+    INSERT INTO aml.alert VALUES
+        ('TL1', 'TK1', '2026-10-02 10:00', 'HIGH', 'OPEN', 'C9', 'Rule A', 'inv', ab, 2),
+        ('TL2', NULL,  '2026-10-05 10:00', 'LOW',  'CLOSED', 'C8', 'Rule B', NULL, ab, 3);
+    r := aml.fn_tool_alert_summary(mgr, '2026-10-01', '2026-10-31');
+    ASSERT (r->'kpis'->>'alert_count')::int = 2 AND (r->'kpis'->>'alerts_without_case')::int = 1, 'alert kpis';
+    ASSERT r->'kpis'->'by_severity' = '{"HIGH": 1, "LOW": 1}', 'by severity';
+    ASSERT (aml.fn_tool_case_details(mgr, 'TK1')->'kpis'->>'alert_count')::int = 1, 'case has one alert';
+
+    -- Conversations belong to their user
+    conv := erp.sp_assistant_save_conversation(mgr, NULL, '{"pending": "as_of_date"}');
+    ASSERT erp.fn_assistant_get_conversation(mgr, conv) = '{"pending": "as_of_date"}', 'state saved';
+    BEGIN
+        PERFORM erp.fn_assistant_get_conversation(associate, conv);
+        RAISE EXCEPTION 'read someone else''s conversation';
+    EXCEPTION WHEN no_data_found THEN NULL;
+    END;
+    PERFORM erp.sp_assistant_audit(mgr, conv, 'overdue?', 'data_question', 'get_erp_payables_ageing',
+                                   '{}', 'As of 2026-10-31', (erp.fn_tool_payables_ageing(mgr, '2026-10-31')->>'result_reference')::uuid,
+                                   'answered');
+    BEGIN   -- a reference must be the user's own tool run
+        PERFORM erp.sp_assistant_audit(associate, NULL, 'x', NULL, NULL, NULL, NULL,
+                                       (SELECT run_id FROM erp.assistant_tool_run WHERE user_id = mgr LIMIT 1), 'answered');
+        RAISE EXCEPTION 'borrowed another user''s result reference';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+    RAISE NOTICE 'PASS smart assistance tools';
+END $$;
+
+-- -------------------------------------- Mapping review + data quality ------
+-- A worker-style batch with one good and four bad records goes through mapping,
+-- validation, corrections and commit.
+DO $$
+DECLARE
+    mgr uuid := pg_temp.uid('manager@studio.local');
+    associate uuid := pg_temp.uid('associate@studio.local');
+    b uuid;
+    r jsonb;
+    m jsonb := '[
+        {"source_field":"Invoice No","target_field":"invoice_id","transform":{"type":"trim"}},
+        {"source_field":"Supplier","target_field":"supplier_id","transform":{"type":"trim"}},
+        {"source_field":"Invoice Date","target_field":"invoice_date","transform":{"type":"parse_date","format":"%d-%b-%Y"}},
+        {"source_field":"Due Date","target_field":"due_date","transform":{"type":"parse_date","format":"%d-%b-%Y"}},
+        {"source_field":"Amount","target_field":"amount","transform":{"type":"parse_decimal","remove_characters":[","]}},
+        {"source_field":"Notes","target_field":null}]';
+BEGIN
+    INSERT INTO erp.ingestion_batch (batch_id, file_name, file_type, file_size_bytes, sha256, storage_uri, uploaded_by)
+    VALUES (gen_random_uuid(), 'sup.csv', 'CSV', 1, encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'file:///s', associate)
+    RETURNING batch_id INTO b;
+    INSERT INTO erp.supplier VALUES ('RV-S1', 'Review Supplier', b, 1);
+
+    b := (erp.sp_create_batch(associate, 'inv.csv', 'CSV', 10, encode(sha256(gen_random_uuid()::text::bytea), 'hex'),
+                              'file:///inv.csv')->>'batch_id')::uuid;
+    PERFORM erp.sp_update_batch_status(b, 'EXTRACTING');
+    INSERT INTO erp.raw_record (batch_id, record_no, target_entity, source_location, raw_fields, extraction_method) VALUES
+      (b, 1, 'invoice', '{"row":2}', '{"Invoice No":"RV-1","Supplier":"RV-S1","Invoice Date":"05-Oct-2026","Due Date":"04-Nov-2026","Amount":"1,000.50","Notes":"x"}', 'csv'),
+      (b, 2, 'invoice', '{"row":3}', '{"Invoice No":"RV-2","Supplier":"RV-S1","Invoice Date":"05-Oct-2026","Due Date":"04-Nov-2026","Amount":"abc"}', 'csv'),
+      (b, 3, 'invoice', '{"row":4}', '{"Invoice No":"RV-3","Supplier":"NOPE","Invoice Date":"05-Oct-2026","Due Date":"04-Nov-2026","Amount":"5"}', 'csv'),
+      (b, 4, 'invoice', '{"row":5}', '{"Invoice No":"RV-1","Supplier":"RV-S1","Invoice Date":"05-Oct-2026","Due Date":"04-Nov-2026","Amount":"7"}', 'csv'),
+      (b, 5, 'invoice', '{"row":6}', '{"Invoice No":"RV-5","Supplier":"RV-S1","Invoice Date":"05-Oct-2026","Due Date":"01-Oct-2026","Amount":"9"}', 'csv');
+    PERFORM erp.sp_update_batch_status(b, 'MAPPING_REVIEW');
+
+    ASSERT jsonb_array_length(erp.fn_review_queue(mgr)->'mapping') >= 1, 'batch is in the mapping queue';
+    r := erp.fn_get_mapping(mgr, b);
+    ASSERT r->>'suggested_entity' = 'invoice' AND r->'entities' ? 'supplier', 'mapping screen data';
+    ASSERT jsonb_array_length(r->'fields') = 6, 'six source fields with samples';
+
+    BEGIN   -- currency is required and neither mapped nor fixed
+        PERFORM erp.sp_approve_mapping(mgr, b, 'invoice', m);
+        RAISE EXCEPTION 'approved without currency';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+    BEGIN   -- associate has mapping.review in ERP, viewer has no ERP role at all
+        PERFORM erp.sp_approve_mapping(pg_temp.uid('viewer@studio.local'), b, 'invoice', m);
+        RAISE EXCEPTION 'viewer approved a mapping';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+        PERFORM erp.sp_approve_mapping(mgr, b, 'iam.app_user', m);
+        RAISE EXCEPTION 'mapped into a non-domain table';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+
+    m := m || '[{"source_field":null,"target_field":"currency","transform":{"type":"constant","value":"USD"}}]';
+    r := erp.sp_approve_mapping(mgr, b, 'invoice', m);
+    ASSERT r->>'status' = 'NEEDS_REVIEW' AND (r->>'accepted')::int = 1 AND (r->>'needs_review')::int = 4, 'after approval: ' || r::text;
+    ASSERT (SELECT normalized_fields FROM erp.raw_record WHERE batch_id = b AND record_no = 1)
+           = '{"invoice_id":"RV-1","supplier_id":"RV-S1","invoice_date":"2026-10-05","due_date":"2026-11-04","amount":1000.50,"currency":"USD"}',
+           'transforms applied';
+    ASSERT (SELECT array_agg(record_no || ':' || rule_code ORDER BY record_no) FROM erp.validation_issue WHERE batch_id = b)
+           = ARRAY['2:CONVERSION', '3:REFERENCE', '4:DUPLICATE', '5:CHECK'], 'one finding per bad record';
+    ASSERT (SELECT status FROM erp.mapping_version WHERE batch_id = b ORDER BY version DESC LIMIT 1) = 'APPROVED', 'versioned';
+
+    r := erp.sp_correct_value(mgr, b, 2, 'amount', '200');
+    ASSERT (SELECT state FROM erp.raw_record WHERE batch_id = b AND record_no = 2) = 'ACCEPTED', 'corrected record accepted';
+    ASSERT (SELECT original_value || '->' || corrected_value FROM erp.validation_issue
+            WHERE batch_id = b AND record_no = 2) = 'abc->200', 'original value kept with the correction';
+    PERFORM erp.sp_reject_record(mgr, b, 3, 'Unknown supplier');
+    PERFORM erp.sp_reject_record(mgr, b, 4, 'Duplicate of row 2');
+    BEGIN
+        PERFORM erp.sp_confirm_issue(mgr, b, (SELECT issue_id FROM erp.validation_issue WHERE batch_id = b AND record_no = 5));
+        RAISE EXCEPTION 'confirmed a CHECK failure without fixing it';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+    r := erp.sp_correct_value(mgr, b, 5, 'due_date', '2026-12-01');
+    ASSERT r->>'status' = 'READY_TO_COMMIT', 'ready after fixes: ' || r::text;
+
+    r := erp.sp_commit_batch(mgr, b);
+    ASSERT (r->>'accepted')::int = 3 AND (r->>'rejected')::int = 2 AND r->'loaded'->>'invoice' = '3', 'commit: ' || r::text;
+    ASSERT (SELECT amount FROM erp.invoice WHERE invoice_id = 'RV-2') = 200, 'corrected value committed';
+    RAISE NOTICE 'PASS mapping review + data quality';
+END $$;
+
 -- ------------------------------------------ DB-level role isolation --------
 -- Each login role must be physically unable to cross into another schema.
 CREATE FUNCTION pg_temp.denied(p_role text, p_sql text) RETURNS boolean LANGUAGE plpgsql AS $$
@@ -390,6 +574,11 @@ BEGIN
     ASSERT NOT pg_temp.denied('iam_app', 'SELECT iam.fn_has_permission(NULL, ''ERP'', ''x'')'), 'iam_app calls public API';
     ASSERT NOT pg_temp.denied('erp_app', 'SELECT 1 FROM erp.invoice'),         'erp_app reads ERP';
     ASSERT NOT pg_temp.denied('aml_ro',  'SELECT 1 FROM aml.alert'),           'aml_ro reads AML';
+    ASSERT pg_temp.denied('erp_app', 'SELECT 1 FROM erp.assistant_audit'),     'assistant tables only via functions';
+    ASSERT pg_temp.denied('erp_app', 'SELECT erp._assistant_begin(NULL, ''x'', ''{}'')'), 'internal helper not callable';
+    ASSERT pg_temp.denied('erp_app', 'SELECT lending.fn_tool_application_summary(NULL, now()::date, now()::date)'),
+           'erp_app cannot call lending tools';
+    ASSERT pg_temp.denied('erp_ro',  'SELECT erp.fn_tool_payables_ageing(NULL, now()::date)'), 'read-only login has no tools';
     RAISE NOTICE 'PASS role isolation';
 END $$;
 

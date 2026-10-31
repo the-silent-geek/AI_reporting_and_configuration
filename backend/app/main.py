@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import db
 from .broker import broker
 from .config import settings
-from .routers import admin, apps, auth, batches
+from .routers import admin, apps, assistant, auth, batches, review, reports, templates
 from .security import Principal, current_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -27,7 +27,7 @@ app = FastAPI(title="Reporting Studio API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
 
-for r in (auth.router, apps.router, admin.router, batches.router):
+for r in (auth.router, apps.router, admin.router, batches.router, assistant.router, review.router, reports.router, templates.router):
     app.include_router(r)
 
 

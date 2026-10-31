@@ -39,6 +39,10 @@ class Settings:
     storage_dir: Path
     max_upload_mb: int
     dev_endpoints: bool              # enables /dev/* helpers (fake worker progress)
+    groq_api_key: str                # empty -> Smart Assistance answers 503
+    groq_model: str
+    groq_base_url: str
+    groq_timeout_seconds: float
 
     def dsn(self, role: str) -> str:
         return (f"host={self.db_host} port={self.db_port} dbname={self.db_name} "
@@ -61,6 +65,10 @@ def load() -> Settings:
         storage_dir=Path(os.getenv("STORAGE_DIR") or ROOT / "backend" / "storage").resolve(),
         max_upload_mb=int(os.getenv("MAX_UPLOAD_MB", "50")),
         dev_endpoints=os.getenv("DEV_ENDPOINTS", "false").lower() == "true",
+        groq_api_key=os.getenv("GROQ_API_KEY", ""),
+        groq_model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+        groq_base_url=os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+        groq_timeout_seconds=float(os.getenv("GROQ_TIMEOUT_SECONDS") or 30),
     )
 
 

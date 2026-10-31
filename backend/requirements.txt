@@ -6,7 +6,8 @@ PyJWT==2.15.1
 aio-pika==10.2.1
 python-multipart==0.0.32
 python-dotenv==1.2.4
+langgraph==1.0.1        # Smart Assistance graph
+httpx==0.28.1           # Groq
 
 # tests
 pytest==9.2.0
-httpx==0.28.1
