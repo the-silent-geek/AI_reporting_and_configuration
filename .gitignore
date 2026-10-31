@@ -1,0 +1,13 @@
+# secrets
+.env
+db/.env
+DB_SHARING.md
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# runtime uploads
+backend/storage/

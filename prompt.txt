@@ -1,0 +1,40 @@
+So we are in a Hackathon of 2 members, one member is handling ML AND I'm doing the user management and RBAC. So I have attached the full problem statement and the flow we have decided. After that we have made a work distribution among two teammates.
+
+I want you to first understand the requirement and plan the db design: we are using PostgreSQL 16.15:
+1. I want 4 schema 'user' for all user related table for auth, authz, rbac, access app lists, 'erp', 'ami', 'lending'
+2. we will make RBAC based sidebar rendering and dashboard rendering, for example a user will role 'manager' he have access to all 3 'erp', 'ami', 'lending'  card so on dashboard all 3 card will appear and user with that role can access those 3. another role 'associate' he only has access to 'erp' and 'ami' so on dahaboard only these 2 will appear the 3rd one 'lending' will be hidden. Similarly for these two roles the sidebar will also render differently. 
+Note: the roles and access mentioned above are not final I have added just for the sake of understanding. I want you to think of all these and proceed accordingly. So we'll have to design db such way and everything will be handle in db only with the help of procedure. So we also have to write stored procedure and all for them.
+3. So it would be a kind of SSO for all 3 products application: after selection every flow is same for every application. The only change would be the backend schema. If user proceeds with 'erp' then everything willbe handle within that schema and it's tables. (this maintains separation of concern)
+
+If I'm missing anything then please think of those way like a 20+ years of experienced architect engineer. Before implementing the db show me the approach and explain in quick time.
+
+Then I'll provide you my local PostgreSQL db access, you will connect to their and do all the schema, table, stored procedure creation etc. Do proper build, run, test , re-validate everything before final implementation. 
+
+--- After AUTH + AuthZ --
+file upload and all:
+So from here the main part will start (UI, API, ML API all connections)
+1. On UI user will upload a file
+2. It will be stored in our PostgreSQL db in most optimal way (handle for bulk 10000+ user try to do so at same time with RabbitMQ and SSE or websocket)
+3. Then it will be handled by AI worker
+4. etc
+
+* I have attached a proper workflow for this one, so please refer to that and design all. 
+
+So at the end we have to be ready with an SSO, UI, API.
+
+Tech stack:
+1. React Vite + TAILWIND CSS
+2. Python for backend
+3. PostgreSQL
+
+Path for materials/docs:
+"D:\MS Edge 'Downloads"
+
+Command:
+When ever I will say 'read prompt' you will read this file: "E:\Hackathon\prompt.txt"
+
+Documentation Artifact:
+Try to use flow diagrams or points to explain everything if possible so it will take less time to read each doc.
+1. Whatever work we will do you have to write the thing in simpler and clear way in a document. It should be direct and quick to read. "WorkDone"
+2. Why we chose this decision over that, proper technical thinking which we can refer later for answering cross questions. 
+
