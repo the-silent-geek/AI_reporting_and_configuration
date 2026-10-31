@@ -11,3 +11,7 @@ __pycache__/
 
 # runtime uploads
 backend/storage/
+
+# OS / runtime junk
+.DS_Store
+erl_crash.dump
