@@ -374,6 +374,11 @@ DECLARE
     r jsonb;
     conv uuid;
 BEGIN
+    -- Isolation: the exact KPI figures below must not include rows left by earlier tests in
+    -- this transaction (e.g. the "batch pipeline" INR invoices). Rolled back at the end.
+    DELETE FROM erp.credit_note; DELETE FROM erp.payment_allocation; DELETE FROM erp.payment;
+    DELETE FROM erp.invoice;     DELETE FROM erp.supplier;
+
     INSERT INTO erp.ingestion_batch (batch_id, file_name, file_type, file_size_bytes, sha256, storage_uri, uploaded_by)
     VALUES (b, 'a.csv', 'CSV', 1, encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'file:///a', associate);
     INSERT INTO erp.supplier VALUES ('TS1', 'ACME Ltd', b, 1), ('TS2', 'Globex', b, 2);
