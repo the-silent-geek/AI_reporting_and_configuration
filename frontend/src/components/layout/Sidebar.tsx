@@ -1,15 +1,13 @@
 import clsx from 'clsx'
-import { ChevronDown, ChevronsUpDown, LayoutGrid, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useApp } from '../../lib/appContext'
-import { useAuth } from '../../lib/auth'
 import { iconFor } from '../../lib/icons'
 import type { MenuItem as Item } from '../../lib/types'
 import { Brand } from '../ui/Misc'
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from '../ui/Menu'
 
 export const SIDEBAR_EXPANDED = 256
 export const SIDEBAR_COLLAPSED = 72
@@ -28,10 +26,6 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: {
     <div className="flex h-full flex-col">
       <div className={clsx('flex h-14 shrink-0 items-center', collapsed ? 'justify-center px-0' : 'px-5')}>
         <Link to="/" aria-label="All applications" onClick={onNavigate}><Brand compact={collapsed} /></Link>
-      </div>
-
-      <div className={clsx('pb-3', collapsed ? 'px-3' : 'px-3')}>
-        <AppSwitcher collapsed={collapsed} onNavigate={onNavigate} />
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-3 py-2">
@@ -167,47 +161,5 @@ function Tooltip({ rect, children }: { rect: DOMRect | null; children: React.Rea
       )}
     </AnimatePresence>,
     document.body,
-  )
-}
-
-function AppSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
-  const { app } = useApp()
-  const { apps } = useAuth()
-  const navigate = useNavigate()
-  const Icon = iconFor(app.icon)
-
-  return (
-    <Menu align="start" className="w-60" trigger={({ toggle, open }) => (
-      <button onClick={toggle} aria-expanded={open} aria-label={`Current app: ${app.name}. Switch app`}
-              className={clsx('flex h-11 w-full items-center gap-3 rounded-lg border border-border bg-surface px-2.5 text-left shadow-sm transition-colors hover:border-border-strong',
-                collapsed && 'justify-center px-0')}>
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-fg text-bg">
-          <Icon className="size-3.5" strokeWidth={2} />
-        </span>
-        {!collapsed && (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[11px] leading-tight text-fg-subtle">Application</span>
-              <span className="block truncate text-sm font-medium leading-tight">{app.name}</span>
-            </span>
-            <ChevronsUpDown className="size-3.5 text-fg-subtle" />
-          </>
-        )}
-      </button>
-    )}>
-      {(close) => (
-        <>
-          <MenuLabel>Switch application</MenuLabel>
-          {apps.map((a) => (
-            <MenuItem key={a.code} icon={iconFor(a.icon)} active={a.code === app.code}
-                      onClick={() => { close(); onNavigate?.(); navigate(a.route) }}>
-              {a.name}
-            </MenuItem>
-          ))}
-          <MenuSeparator />
-          <MenuItem icon={LayoutGrid} onClick={() => { close(); onNavigate?.(); navigate('/') }}>All applications</MenuItem>
-        </>
-      )}
-    </Menu>
   )
 }

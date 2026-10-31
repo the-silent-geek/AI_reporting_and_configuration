@@ -1,6 +1,7 @@
 import { ArrowUpRight, LayoutGrid } from 'lucide-react'
 import { motion } from 'motion/react'
 import { Link } from 'react-router-dom'
+import { ThemeToggle } from '../components/layout/ThemeToggle'
 import { UserMenu } from '../components/layout/UserMenu'
 import { Badge, Brand, EmptyState } from '../components/ui/Misc'
 import { useAuth } from '../lib/auth'
@@ -17,7 +18,10 @@ export function Launcher() {
       <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Brand />
-          <UserMenu />
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <UserMenu />
+          </div>
         </div>
       </header>
 

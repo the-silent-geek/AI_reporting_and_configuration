@@ -27,6 +27,13 @@ flowchart LR
 - **RBAC in the UI:** sidebar, buttons and routes follow the user's permissions; a typed URL to a forbidden page shows "no access"
 - **Not built yet:** Mapping, Data quality, Reports, Templates and Assistant show an honest "not available yet" screen, not fake data
 
+**Header update**
+- The application switcher moved from the sidebar to the header, next to the page breadcrumb.
+- Theme toggle (light/dark) added to the header; it was removed from the profile menu.
+- Profile menu now has **Change password**: asks for the current password, then the new one twice, with live rule checks. The server signs out the other devices.
+- Fixed: switching application sent you straight back to the previous one. The shell used the old app's context for one render and redirected; it now waits for the new app's context.
+- Fixed: in dialogs, focus jumped back to the first field on every keystroke.
+
 **Verified in the browser**
 - Signed in as analyst, reviewer, app admin and viewer (`@azentio.ai`)
 - Full run: upload → the worker runs through RabbitMQ → live SSE → reviewer commits (5 accepted, 1 rejected)

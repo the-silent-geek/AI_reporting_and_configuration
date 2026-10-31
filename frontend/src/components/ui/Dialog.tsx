@@ -13,12 +13,17 @@ export function Dialog({ open, onClose, title, description, children, footer }: 
   footer?: ReactNode
 }) {
   const panel = useRef<HTMLDivElement>(null)
+  // Parents pass a new onClose every render. Keep it in a ref so the effect below runs
+  // only when the dialog opens/closes - otherwise focus jumped back to the first input
+  // on every keystroke.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose })
 
   useEffect(() => {
     if (!open) return
     const previous = document.activeElement as HTMLElement | null
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') onCloseRef.current()
       if (e.key === 'Tab' && panel.current) {
         const items = panel.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), input:not([disabled]), select, textarea, a[href], [tabindex]:not([tabindex="-1"])')
@@ -36,7 +41,7 @@ export function Dialog({ open, onClose, title, description, children, footer }: 
       document.body.style.overflow = ''
       previous?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   return createPortal(
     <AnimatePresence>

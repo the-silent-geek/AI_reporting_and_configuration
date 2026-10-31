@@ -7,7 +7,9 @@ import { AppCtx, currentLabel, isAllowed, type AppState } from '../../lib/appCon
 import type { AppContext } from '../../lib/types'
 import { Button } from '../ui/Button'
 import { EmptyState, Skeleton } from '../ui/Misc'
+import { AppSwitcher } from './AppSwitcher'
 import { Sidebar, SIDEBAR_COLLAPSED, SIDEBAR_EXPANDED } from './Sidebar'
+import { ThemeToggle } from './ThemeToggle'
 import { UserMenu } from './UserMenu'
 
 const COLLAPSE_KEY = 'sidebar-collapsed'
@@ -49,10 +51,14 @@ export function AppShell() {
 
   useEffect(() => setDrawer(false), [pathname])
 
-  const state = useMemo<AppState | null>(() => ctx && {
-    ...ctx, code,
-    can: (p: string) => ctx.permissions.includes(p),
-  }, [ctx, code])
+  // After switching apps the URL changes first and the new context arrives a moment later.
+  // Only trust a context that belongs to the app in the URL; otherwise show the skeleton
+  // (using the stale one made the shell redirect straight back to the previous app).
+  const fresh = ctx && ctx.app.code.toLowerCase() === code ? ctx : null
+  const state = useMemo<AppState | null>(() => fresh && {
+    ...fresh, code,
+    can: (p: string) => fresh.permissions.includes(p),
+  }, [fresh, code])
 
   if (error) {
     return (
@@ -111,14 +117,17 @@ export function AppShell() {
                     className="-ml-1 rounded-md p-2 text-fg-muted hover:bg-muted hover:text-fg lg:hidden">
               <MenuIcon className="size-5" strokeWidth={1.75} />
             </button>
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
-              <Link to={`${state.app.route}/dashboard`} className="text-fg-muted transition-colors hover:text-fg">{state.app.name}</Link>
-              {page && <>
+            <AppSwitcher />
+            {page && (
+              <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm sm:flex">
                 <ChevronRight className="size-3.5 shrink-0 text-fg-subtle" />
-                <span className="truncate font-medium">{page}</span>
-              </>}
-            </nav>
-            <div className="ml-auto"><UserMenu roles={state.roles} /></div>
+                <Link to={pathname} className="truncate font-medium">{page}</Link>
+              </nav>
+            )}
+            <div className="ml-auto flex items-center gap-1">
+              <ThemeToggle />
+              <UserMenu roles={state.roles} />
+            </div>
           </header>
 
           <main className="flex-1 overflow-y-auto">

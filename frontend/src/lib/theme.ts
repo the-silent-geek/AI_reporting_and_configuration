@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 
 export type Theme = 'light' | 'dark' | 'system'
 
-function apply(theme: Theme) {
-  const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+const query = () => matchMedia('(prefers-color-scheme: dark)')
+
+function apply(dark: boolean) {
   document.documentElement.classList.toggle('dark', dark)
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#09090b' : '#ffffff')
 }
@@ -14,16 +15,20 @@ function saved(): Theme {
 
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(saved)
+  const [systemDark, setSystemDark] = useState(() => query().matches)
+  const dark = theme === 'dark' || (theme === 'system' && systemDark)
 
   useEffect(() => {
-    apply(theme)
-    try { localStorage.setItem('theme', theme) } catch { /* private mode */ }
-    if (theme !== 'system') return
-    const mq = matchMedia('(prefers-color-scheme: dark)')
-    const follow = () => apply('system')
+    const mq = query()
+    const follow = () => setSystemDark(mq.matches)
     mq.addEventListener('change', follow)
     return () => mq.removeEventListener('change', follow)
-  }, [theme])
+  }, [])
 
-  return { theme, setTheme }
+  useEffect(() => {
+    apply(dark)
+    try { localStorage.setItem('theme', theme) } catch { /* private mode */ }
+  }, [theme, dark])
+
+  return { theme, setTheme, dark, toggle: () => setTheme(dark ? 'light' : 'dark') }
 }
