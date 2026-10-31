@@ -1,0 +1,22 @@
+import { Download, Play } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Button } from '../../components/ui/Button'
+import { Card, PageHeader } from '../../components/ui/Misc'
+import { api, json } from '../../lib/api'
+import { useApp } from '../../lib/appContext'
+
+type Report = { template_code:string; name:string; definition:{description?:string; dataset:string}; parameter_schema:{properties?:Record<string,{title?:string;type?:string;default?:unknown}>} }
+const text=(x:unknown)=>typeof x==='object'?JSON.stringify(x):String(x ?? '–')
+export function Reports() {
+ const { code }=useApp(); const [reports,setReports]=useState<Report[]>([]); const [result,setResult]=useState<any>(null); const [busy,setBusy]=useState<string|null>(null)
+ const [error,setError]=useState('')
+ const mock = { mock: true, kpis: { open_invoice_count: 12, outstanding_INR: 180000 }, chart_data: [{bucket:'Current', currency:'INR', amount:80000},{bucket:'1–30 days', currency:'INR',amount:60000},{bucket:'31–60 days',currency:'INR',amount:40000}], supporting_rows:[] }
+ useEffect(()=>{ api<{reports:Report[]}>(`/api/apps/${code}/reports`).then(x=>setReports(x.reports)).catch(e=>setError(`Could not load reports: ${e.message}`)) },[code])
+ async function run(r:Report,form:HTMLFormElement) { setBusy(r.template_code); setError(''); try { const values=Object.fromEntries(new FormData(form)); const params=Object.fromEntries(Object.entries(values).filter(([,v])=>v!=='')); setResult(await api(`/api/apps/${code}/reports/${r.template_code}/run`,{method:'POST',...json({params})})) } catch(e) { setError(e instanceof Error ? e.message : 'Report generation failed') } finally { setBusy(null) } }
+ function csv() { if(!result) return; const rows: Record<string,unknown>[] = result.supporting_rows?.length?result.supporting_rows:result.chart_data??[]; const keys=[...new Set(rows.flatMap(x=>Object.keys(x)))]; const body=[keys.join(','),...rows.map(x=>keys.map(k=>JSON.stringify(x[k]??'')).join(','))].join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([body],{type:'text/csv'})); a.download='report.csv'; a.click(); URL.revokeObjectURL(a.href) }
+ return <><PageHeader title="Reports" description="Generate a reproducible snapshot from authorized product data." actions={<Button icon={Play} variant="primary" onClick={()=>setResult(mock)}>Generate mock report</Button>} />
+ {error && <p role="alert" className="mb-4 text-danger">{error}</p>}
+ <Card className="mb-6 p-4 sm:p-6"><h2 className="font-semibold">Mock payables report</h2><p className="my-2 text-sm text-fg-muted">Synthetic example: 12 invoices, INR 180,000 outstanding. No real business records are used.</p><Button onClick={()=>setResult(mock)}>Generate mock report</Button></Card>
+ <div className="grid items-start gap-4 lg:grid-cols-2 lg:gap-6">{reports.map(r=><Card key={r.template_code} className="min-w-0 p-4 sm:p-6"><h2 className="font-semibold">{r.name}</h2><p className="mt-1 text-sm text-fg-muted">{r.definition.description ?? r.definition.dataset}</p><form className="mt-5 space-y-4" onSubmit={e=>{e.preventDefault();run(r,e.currentTarget)}}>{Object.entries(r.parameter_schema.properties??{}).map(([key,p])=><label key={key} className="block text-xs font-medium">{p.title??key.replaceAll('_',' ')}<input name={key} type={p.type==='integer'?'number':key.includes('date')?'date':'text'} defaultValue={p.default as string} className="mt-2 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm" /></label>)}<Button type="submit" icon={Play} loading={busy===r.template_code}>Generate report</Button></form></Card>)}</div>
+ {result&&<Card className="mt-6 min-w-0 p-4 sm:p-6 print:border-0"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">{result.mock ? "Mock report — synthetic data" : "Generated report"}</h2><span className="flex gap-2 print:hidden"><Button size="sm" icon={Download} onClick={csv}>CSV</Button></span></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{Object.entries(result.kpis??{}).map(([k,v])=><div className="min-w-0 rounded-lg border border-border p-4" key={k}><p className="text-xs text-fg-muted">{k.replaceAll('_',' ')}</p><p className="mt-1 font-semibold">{text(v)}</p></div>)}</div><pre className="mt-5 max-h-96 overflow-auto rounded-lg bg-subtle p-4 text-xs">{JSON.stringify(result.chart_data?.length?result.chart_data:result.supporting_rows,null,2)}</pre></Card>}</>
+}

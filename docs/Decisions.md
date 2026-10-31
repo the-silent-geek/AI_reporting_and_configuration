@@ -135,3 +135,38 @@ Why we chose X over Y. Use this to answer judges' cross-questions.
 ### D17 · No table partitioning yet
 - `raw_record`'s primary key `(batch_id, record_no)` already makes per-batch reads fast.
 - Partitioning adds operational cost; add it (by upload month) when data volume calls for it.
+
+### D29 · AI worker reports through the API, writes results directly
+- The worker logs in as `<app>_app`, which can INSERT into `raw_record`, `mapping_version` and `validation_issue` but cannot change `ingestion_batch`.
+- Status still goes through RabbitMQ to `sp_update_batch_status`, so the state machine and SSE stay in one place.
+- Records are bulk-loaded with COPY, without a round trip through the API.
+
+### D30 · Worker idempotency: one transaction plus an advisory lock
+- Records, issues and the mapping proposal are written together, or not at all.
+- A per-batch `pg_advisory_xact_lock`, followed by an "already has records?" check, makes a redelivered job (or two workers on one batch) write nothing twice.
+- `<app>_app` has no DELETE, so "delete and re-insert" was never an option.
+
+### D31 · Mapping: aliases → local BGE → Groq only when unclear
+- Most headers match an alias, with no model needed.
+- BGE runs on the worker's CPU, so field data never leaves the machine.
+- Groq is called once per file and only for the leftover fields.
+  - It gets masked samples only, and its reply must name allowed columns.
+  - If Groq is down, the file is still processed and the unclear fields are flagged for review.
+- The worker only proposes (`PROPOSED`, `created_by` NULL). A person approves the mapping.
+
+### D32 · OCR only where there is no text
+- Native PDF text is exact and fast, so OCR runs only for pages, or large images, without an embedded text layer.
+- Scanned and digital tables go through the same layout code, so they produce the same records.
+
+### D33 · Smart Assistance: LLM plans, PostgreSQL calculates
+- Groq does two narrow jobs: turn the question into one tool call (strict JSON), then explain that tool's result.
+- Every number comes from a `fn_tool_*` DB function run as `<app>_app`, which checks permissions again. There is no tool that takes SQL, table names or file paths.
+- The routing decisions are plain code in the LangGraph `validate_plan` node, not the model: unknown tool, other product, missing argument, reversed period, report requests. The model doesn't follow rules like "ask for the as-of date" reliably, so those are enforced on the user's actual words.
+
+### D34 · Grounding check on every answer
+- Every number in the model's answer must appear in the tool result (or the question). Otherwise the answer is replaced by a plain template built from the KPIs, and the UI says so.
+- Customer, applicant and investigator references are removed before the result goes to Groq. The user still sees them in the UI.
+
+### D35 · Conversation state in our own table, not LangGraph's checkpointer
+- LangGraph's Postgres checkpointer creates its own tables, which needs CREATE rights the product logins deliberately don't have (D2/D5).
+- So the graph state that matters between turns (a pending clarification, the last 3 turns) is saved through `sp_assistant_save_conversation`, scoped to its owner.

@@ -72,7 +72,7 @@ if (-not $TestOnly) {
 
     # --- 01..06: each file is all-or-nothing (-1 = single transaction) -----
     foreach ($f in '01_schemas.sql','02_iam_tables.sql','03_iam_functions.sql',
-                   '04_product_pipeline.sql','05_domain_tables.sql','06_seed.sql') {
+                   '04_product_pipeline.sql','05_domain_tables.sql','06_seed.sql','07_smart_assistance.sql','08_mapping_quality.sql','09_reports_templates.sql','10_report_catalog_fix.sql','11_lending_status_filter.sql','12_business_dashboards.sql','13_assistant_record_templates.sql') {
         Write-Host "== $f"
         Invoke-Psql $DbName @('-1', '-f', (Join-Path $here $f))
     }

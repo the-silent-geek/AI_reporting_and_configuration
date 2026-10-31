@@ -223,6 +223,40 @@ Every domain row has `batch_id` + `source_record_no` → **click any number, fin
 
 ---
 
+### Smart Assistance (`07_smart_assistance.sql`)
+
+Per product, from the template `_assistant.sql`:
+
+| Object | Purpose |
+|---|---|
+| `assistant_conversation` | context kept between turns (a pending clarification, the last 3 turns); only its owner can read it |
+| `assistant_tool_run` | one row per data-tool call; its `run_id` is the `result_reference` shown to users |
+| `assistant_audit` | one row per question: intent, tool, arguments, period, result reference, outcome |
+| `sp_assistant_save_conversation`, `fn_assistant_get_conversation`, `sp_assistant_audit` | the only way to use the tables above |
+
+**Data tools** (`fn_tool_*`, docs_ai/02 § Allowlisted data tools). Every tool:
+- re-checks `assistant.use` and `dashboard.view`
+- records the run
+- returns `{result_reference, product, reporting_period, filters, metric_definitions, kpis, chart_data, supporting_rows}`
+
+Money KPIs are always `{currency: amount}`, never summed across currencies.
+
+| Schema | Tools |
+|---|---|
+| lending | `fn_tool_application_summary`, `fn_tool_application_details`, `fn_tool_application_trend` |
+| erp | `fn_tool_payables_ageing`, `fn_tool_overdue_by_supplier`, `fn_tool_payment_details` (outstanding = invoice − allocations − approved credit notes, as of a date) |
+| aml | `fn_tool_alert_summary`, `fn_tool_alert_details`, `fn_tool_case_details` |
+
+**Existing databases:** apply it once as superuser:
+
+```
+psql -d reporting_studio -v ON_ERROR_STOP=1 -1 -f db/07_smart_assistance.sql
+```
+
+`build.ps1` includes it for new builds.
+
+---
+
 ## 7. Upload flow (who calls what)
 
 ```mermaid

@@ -1,10 +1,17 @@
 """SSO: dashboard cards and entering an app (sidebar + permissions)."""
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
 
 from .. import db
 from ..security import Principal, current_user, product
 
 router = APIRouter(prefix="/api/apps", tags=["apps"])
+
+
+@router.get('/{app_code}/dashboard')
+def business_dashboard(start_date: date, end_date: date,
+                       app: str = Depends(product), me: Principal = Depends(current_user)):
+    return db.call(app, f'{app}.fn_business_dashboard', me.user_id, start_date, end_date)
 
 
 @router.get("")

@@ -1,0 +1,12 @@
+aio-pika==10.2.1
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
+python-dotenv==1.2.4
+pydantic==2.11.7
+httpx==0.28.1          # Groq (OpenAI-compatible API)
+openpyxl==3.1.5        # .xlsx
+xlrd==2.0.1            # legacy .xls
+pdfplumber==0.11.7     # native PDF text + page rendering for OCR (pypdfium2)
+
+# tests
+pytest==9.2.0

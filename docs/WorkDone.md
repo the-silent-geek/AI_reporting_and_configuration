@@ -4,6 +4,57 @@ Short log of what is built. Details → [DB_GUIDE.md](DB_GUIDE.md) · reasons �
 
 ---
 
+## 2026-10-31 · Smart Assistance (chat) ✅
+
+**Built**
+- **Database (`db/07_smart_assistance.sql` + template `_assistant.sql`):**
+  - 9 allowlisted tools: Lending summary, details and trend; ERP payables ageing, overdue by supplier and payment details; AML alert summary, alert details and case details
+  - the result contract from docs_ai/02, a record of every tool run, an audit row per question, and per-user conversation state
+- **Backend (`app/assistant/`):**
+  - the LangGraph graph from docs_ai/02: normalize → catalog → Groq plan → validate → clarification / tool → grounded answer → audit
+  - `POST /api/apps/{app}/assistant/chat`
+- **Frontend:** the Smart assistance page replaces the placeholder. It has suggested questions, a chat thread, KPI figures, supporting rows, and a sources line on every data answer (period, filters, definitions, result reference).
+
+**Verified**
+- DB assertions in `tests/test_all.sql`: hand-checked ageing numbers, permissions, conversation ownership, grants
+- 34 backend tests (scripted-Groq graph routing, the HTTP endpoint against the real tool functions)
+- Real Groq (`gpt-oss-120b`) questions over HTTP on a test copy of the DB
+
+**Not yet done**
+- **Shared DB:** `07_smart_assistance.sql` must be applied by the host (see DB_GUIDE)
+- **Later steps:** report configuration through chat (docs_ai step 6) and RAG (step 7)
+- **Groq free tier:** 8k tokens/min allows roughly 3 questions per minute
+
+---
+
+## 2026-10-31 · AI ingestion worker ✅
+
+**Built** (`worker/`, run with `python -m ai_worker`; details in [worker/README.md](../worker/README.md))
+- **Queue:** consumes `ingestion.requested` and reports on `<app>.progress`, using the same topology and statuses as the API, so every message passes `sp_update_batch_status`
+- **Formats:** CSV (encoding and delimiter sniffing, ragged rows flagged), Excel (`.xlsx`/`.xls`, every sheet, header row found under title rows), JSON (arrays, wrapped arrays, JSON Lines; nested fields flattened)
+- **PDF:**
+  - pages with embedded text are read natively
+  - scanned pages, and scanned images inside digital pages, go to PaddleOCR
+  - both rebuild table rows or label/value forms the same way
+- **Writes:** `raw_record` (COPY), `validation_issue` and a `PROPOSED` `mapping_version` in one transaction, as `<app>_app`
+- **Mapping:**
+  - order: aliases + types → local `bge-small-en-v1.5` → Groq, used only for unclear fields
+  - Groq gets masked samples only, and its reply is schema-checked against an allowlist
+- **Reliability:**
+  - idempotent: a redelivered job writes nothing twice
+  - temporary errors are retried with backoff and then dead-lettered
+  - a bad file becomes `FAILED` with a user-safe message
+
+**Verified**
+- 36 tests pass: CSV ingestion, PDF/OCR routing, mapping layers, Groq validation, ack/retry decisions
+- One test runs against the real schema built from `db/*.sql`, as `erp_app`: COPY, grants, the redelivery check, and every status applied through `sp_update_batch_status`
+
+**Not yet verified**
+- Against a live RabbitMQ broker
+- With the real BGE and PaddleOCR models (the tests use stand-ins)
+
+---
+
 ## 2026-10-31 · Frontend UI (React + Vite + Tailwind) ✅
 
 ```mermaid
